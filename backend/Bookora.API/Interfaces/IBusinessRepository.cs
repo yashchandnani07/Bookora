@@ -10,5 +10,9 @@ public interface IBusinessRepository
         Guid userId
     );
 
+    Task<Business?> GetBusinessBySlugAsync(
+        string slug
+    );
+    
     Task SaveChangesAsync();
 }

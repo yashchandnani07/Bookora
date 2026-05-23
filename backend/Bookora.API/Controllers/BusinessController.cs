@@ -55,4 +55,23 @@ public class BusinessController : ControllerBase
 
         return Ok(business);
     }
+
+    [HttpGet("{slug}")]
+    public async Task<IActionResult> GetBusinessBySlug(
+        string slug
+    )
+    {
+        var business = await _businessService
+            .GetBusinessBySlugAsync(slug);
+
+        if (business == null)
+        {
+            return NotFound(new
+            {
+                message = "Business not found"
+            });
+        }
+
+        return Ok(business);
+    }
 }

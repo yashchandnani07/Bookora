@@ -39,7 +39,12 @@ public class BusinessService : IBusinessService
             OpeningTime = dto.OpeningTime,
             ClosingTime = dto.ClosingTime,
             CreatedAt = DateTime.UtcNow,
-            UserId = Guid.Parse(userId!)
+            UserId = Guid.Parse(userId!),
+            Description = dto.Description,
+            Tags = dto.Tags,
+            Slug = dto.Name
+                .ToLower()
+                .Replace(" ", "-"),
         };
 
         await _repository.AddBusinessAsync(
@@ -63,5 +68,13 @@ public class BusinessService : IBusinessService
             .GetBusinessByUserIdAsync(
                 Guid.Parse(userId!)
             );
+    }
+
+    public async Task<Business?> GetBusinessBySlugAsync(
+        string slug
+    )
+    {
+        return await _repository
+            .GetBusinessBySlugAsync(slug);
     }
 }

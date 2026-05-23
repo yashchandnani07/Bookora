@@ -21,4 +21,10 @@ public class CreateBusinessDto
     public TimeOnly OpeningTime { get; set; }
 
     public TimeOnly ClosingTime { get; set; }
+
+    public string Description { get; set; }
+    = string.Empty;
+
+    public string Tags { get; set; }
+        = string.Empty;
 }

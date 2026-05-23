@@ -14,4 +14,8 @@ public interface IBusinessService
     Task<Business?> GetMyBusinessAsync(
         ClaimsPrincipal user
     );
+
+    Task<Business?> GetBusinessBySlugAsync(
+        string slug
+    );
 }

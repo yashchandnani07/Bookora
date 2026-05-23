@@ -33,4 +33,16 @@ public class Business
     public Guid UserId { get; set; }
 
     public User? User { get; set; }
+
+    public string Description { get; set; }
+    = string.Empty;
+
+    public string Tags { get; set; }
+        = string.Empty;
+
+    public string Slug { get; set; }
+        = string.Empty;
+
+    public bool IsVerified { get; set; }
+        = false;
 }

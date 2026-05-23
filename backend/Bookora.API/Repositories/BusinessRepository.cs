@@ -37,4 +37,14 @@ public class BusinessRepository : IBusinessRepository
     {
         await _context.SaveChangesAsync();
     }
+
+    public async Task<Business?> GetBusinessBySlugAsync(
+        string slug
+    )
+    {
+        return await _context.Businesses
+            .FirstOrDefaultAsync(x =>
+                x.Slug == slug
+            );
+    }
 }
