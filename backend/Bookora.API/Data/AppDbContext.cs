@@ -16,6 +16,9 @@ public class AppDbContext : DbContext
 
     public DbSet<Offer> Offers => Set<Offer>();
 
+    public DbSet<OfferSlot> OfferSlots
+    => Set<OfferSlot>();
+
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -31,6 +34,12 @@ public class AppDbContext : DbContext
             .HasOne(x => x.User)
             .WithMany(x => x.Businesses)
             .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<OfferSlot>()
+            .HasOne(x => x.Offer)
+            .WithMany(x => x.Slots)
+            .HasForeignKey(x => x.OfferId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

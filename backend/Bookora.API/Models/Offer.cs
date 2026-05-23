@@ -34,4 +34,8 @@ public class Offer
     public Guid BusinessId { get; set; }
 
     public Business? Business { get; set; }
+
+    public ICollection<OfferSlot> Slots
+    { get; set; }
+    = new List<OfferSlot>();
 }

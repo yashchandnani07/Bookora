@@ -115,6 +115,16 @@ builder.Services.AddScoped<
     OfferService
 >();
 
+builder.Services.AddScoped<
+    IOfferSlotRepository,
+    OfferSlotRepository
+>();
+
+builder.Services.AddScoped<
+    IOfferSlotService,
+    OfferSlotService
+>();
+
 var app = builder.Build();
 
 
