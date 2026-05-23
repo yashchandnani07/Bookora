@@ -17,6 +17,7 @@ public class User
     public string PasswordHash { get; set; } = string.Empty;
 
     public string Role { get; set; } = "User";
-
+    public ICollection<Business> Businesses { get; set; }
+        = new List<Business>();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

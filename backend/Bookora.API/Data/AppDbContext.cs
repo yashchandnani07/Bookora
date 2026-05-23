@@ -12,12 +12,17 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<Business> Businesses => Set<Business>();
+
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
-        builder.Entity<User>()
-            .HasIndex(x => x.Email)
-            .IsUnique();
+        builder.Entity<Business>()
+            .HasOne(x => x.User)
+            .WithMany(x => x.Businesses)
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
-}   
+}
