@@ -1,0 +1,6 @@
+@Bookora.API_HostAddress = http://localhost:5118
+
+GET {{Bookora.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
