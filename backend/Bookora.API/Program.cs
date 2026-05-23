@@ -105,6 +105,16 @@ builder.Services.AddScoped<
     BusinessService
 >();
 
+builder.Services.AddScoped<
+    IOfferRepository,
+    OfferRepository
+>();
+
+builder.Services.AddScoped<
+    IOfferService,
+    OfferService
+>();
+
 var app = builder.Build();
 
 

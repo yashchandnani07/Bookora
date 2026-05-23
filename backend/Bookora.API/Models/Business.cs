@@ -27,6 +27,8 @@ public class Business
     public DateTime CreatedAt { get; set; }
         = DateTime.UtcNow;
 
+    public ICollection<Offer> Offers { get; set; }
+        = new List<Offer>();
 
     // RELATIONSHIP
 
