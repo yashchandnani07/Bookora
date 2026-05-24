@@ -22,28 +22,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        var allowedOrigins =
-            builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ??
-            Array.Empty<string>();
-
         policy
-            .SetIsOriginAllowed(origin =>
-            {
-                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                {
-                    return false;
-                }
-
-                var host = uri.Host.ToLowerInvariant();
-
-                return allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase) ||
-                       host == "localhost" ||
-                       host == "127.0.0.1" ||
-                       host.EndsWith(".vercel.app") ||
-                       host.StartsWith("10.") ||
-                       host.StartsWith("172.") ||
-                       host.StartsWith("192.168.");
-            })
+            .SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -172,7 +152,9 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
+// Redirection is handled externally by the Render SSL load balancer. 
+// Redirection inside the container breaks CORS preflight and SignalR negotiation.
+// app.UseHttpsRedirection();
 
 app.UseCors("AllowFrontend");
 
