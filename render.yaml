@@ -2,22 +2,15 @@ services:
   - type: web
     name: bookora-backend
     runtime: docker
-    rootDirectory: backend
-    dockerfilePath: Dockerfile
-    dockerContext: .
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
     plan: free
     envVars:
       - key: ConnectionStrings__DefaultConnection
-        fromDatabase:
-          name: bookora-db
-          property: connectionString
+        value: Host=ep-blue-salad-aogmazn6-pooler.c-2.ap-southeast-1.aws.neon.tech; Database=neondb; Username=neondb_owner; Password=npg_u5tCTnvz3SLh; SSL Mode=VerifyFull; Channel Binding=Require;
       - key: Jwt__Key
-        generateValue: true
+        value: THIS_IS_A_SUPER_SECRET_KEY_FOR_BOOKORA_2026
       - key: Jwt__Issuer
         value: BookoraAPI
       - key: Jwt__Audience
         value: BookoraClient
-
-databases:
-  - name: bookora-db
-    plan: free
