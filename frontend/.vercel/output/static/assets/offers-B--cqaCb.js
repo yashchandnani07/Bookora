@@ -1,1 +1,0 @@
-import{a as f}from"./client-C-FOQDEm.js";function n(){return f("/Offer/all")}function a(){return f("/Offer/my")}function o(r){return f(`/Offer/${r}`)}function O(r){return f("/Offer",{method:"POST",body:JSON.stringify(r)}).then(e=>e.offer)}export{o as a,a as b,O as c,n as g};

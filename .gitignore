@@ -19,3 +19,8 @@ frontend/dist/
 Thumbs.db
 
 backend/Bookora.API/appsettings.Development.json
+
+# Render CLI
+render.exe
+render-cli-temp/
+.render/

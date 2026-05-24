@@ -1,1 +1,0 @@
-import{a as n}from"./client-C-FOQDEm.js";function r(o){return n("/Booking",{method:"POST",body:JSON.stringify(o)}).then(t=>t.data)}function a(o){return n(`/Booking/${o}`)}function e(){return n("/Booking/my")}export{e as a,r as c,a as g};

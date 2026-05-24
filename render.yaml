@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: bookora-backend
+    runtime: docker
+    rootDirectory: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: ConnectionStrings__DefaultConnection
+        fromDatabase:
+          name: bookora-db
+          property: connectionString
+      - key: Jwt__Key
+        generateValue: true
+      - key: Jwt__Issuer
+        value: BookoraAPI
+      - key: Jwt__Audience
+        value: BookoraClient
+
+databases:
+  - name: bookora-db
+    plan: free
