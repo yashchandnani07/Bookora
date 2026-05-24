@@ -2,11 +2,14 @@ using Bookora.API.Data;
 using Bookora.API.DTOs.Booking;
 using Bookora.API.Interfaces;
 using Bookora.API.Models;
+using Microsoft.AspNetCore.SignalR;
+using Bookora.API.Hubs;
 
 namespace Bookora.API.Services;
 
 public class BookingService : IBookingService
 {
+    private readonly IHubContext<BookingHub> _hubContext;
     private readonly IBookingRepository _bookingRepository;
     private readonly IOfferRepository _offerRepository;
     private readonly IOfferSlotRepository _slotRepository;
@@ -16,13 +19,15 @@ public class BookingService : IBookingService
         IBookingRepository bookingRepository,
         IOfferRepository offerRepository,
         IOfferSlotRepository slotRepository,
-        AppDbContext context
+        AppDbContext context,
+        IHubContext<BookingHub> hubContext
     )
     {
         _bookingRepository = bookingRepository;
         _offerRepository = offerRepository;
         _slotRepository = slotRepository;
         _context = context;
+        _hubContext = hubContext;
     }
 
     public async Task<(bool Success, string Message, Booking? Booking)>
@@ -99,6 +104,17 @@ public class BookingService : IBookingService
         _context.OfferSlots.Update(slot);
 
         await _context.SaveChangesAsync();
+        await _hubContext.Clients.All.SendAsync(
+    "SlotUpdated",
+    new
+    {
+        SlotId = slot.Id,
+        Capacity = slot.Capacity,
+        BookedCount = slot.BookedCount,
+        RemainingCapacity = slot.RemainingCapacity,
+        Status = slot.Status
+    }
+);
 
         await _bookingRepository.CreateAsync(booking);
 

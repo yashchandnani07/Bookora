@@ -1,5 +1,7 @@
 namespace Bookora.API.Models;
 
+using System.ComponentModel.DataAnnotations.Schema;
+
 public class OfferSlot
 {
     public Guid Id { get; set; }
@@ -10,13 +12,14 @@ public class OfferSlot
 
     public int Capacity { get; set; }
 
+    [NotMapped]
     public int RemainingCapacity
-{
-    get
     {
-        return Capacity - BookedCount;
+        get
+        {
+            return Capacity - BookedCount;
+        }
     }
-}
 
     public bool IsActive { get; set; }
         = true;

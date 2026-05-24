@@ -8,6 +8,7 @@ using Microsoft.OpenApi.Models;
 using Bookora.API.Interfaces;
 using Bookora.API.Repositories;
 using System.Text.Json.Serialization;
+using Bookora.API.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -63,6 +64,8 @@ builder.Services
         options.JsonSerializerOptions.ReferenceHandler
             = ReferenceHandler.IgnoreCycles;
     });
+
+builder.Services.AddSignalR();
 
 
 // SWAGGER
@@ -160,5 +163,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHub<BookingHub>("/hubs/bookings");
 
 app.Run();
