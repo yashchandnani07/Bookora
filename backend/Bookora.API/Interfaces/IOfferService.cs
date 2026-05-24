@@ -15,6 +15,8 @@ public interface IOfferService
         Guid businessId
     );
 
+    Task<List<Offer>> GetAllOffersAsync();
+
     Task<Offer?> GetOfferByIdAsync(
         Guid id
     );

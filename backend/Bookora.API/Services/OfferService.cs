@@ -1,6 +1,8 @@
 using Bookora.API.DTOs.Offer;
+using Bookora.API.Hubs;
 using Bookora.API.Interfaces;
 using Bookora.API.Models;
+using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 
 namespace Bookora.API.Services;
@@ -8,17 +10,18 @@ namespace Bookora.API.Services;
 public class OfferService : IOfferService
 {
     private readonly IOfferRepository _offerRepository;
-
-    private readonly IBusinessRepository _businessRepository;
-
+    private readonly IOfferSlotRepository _slotRepository;
+    private readonly IHubContext<BookingHub> _hubContext;
 
     public OfferService(
         IOfferRepository offerRepository,
-        IBusinessRepository businessRepository
+        IOfferSlotRepository slotRepository,
+        IHubContext<BookingHub> hubContext
     )
     {
         _offerRepository = offerRepository;
-        _businessRepository = businessRepository;
+        _slotRepository = slotRepository;
+        _hubContext = hubContext;
     }
 
     public async Task<Offer> CreateOfferAsync(
@@ -26,11 +29,6 @@ public class OfferService : IOfferService
         ClaimsPrincipal user
     )
     {
-        var business = await _businessRepository
-            .GetBusinessByUserIdAsync(
-                dto.BusinessId
-            );
-
         var offer = new Offer
         {
             Id = Guid.NewGuid(),
@@ -38,6 +36,8 @@ public class OfferService : IOfferService
             Title = dto.Title,
 
             Description = dto.Description,
+
+            Category = dto.Category,
 
             OriginalPrice = dto.OriginalPrice,
 
@@ -64,20 +64,43 @@ public class OfferService : IOfferService
             offer
         );
 
+        await _slotRepository.AddSlotAsync(
+            new OfferSlot
+            {
+                Id = Guid.NewGuid(),
+                SlotStart = dto.StartDate,
+                SlotEnd = dto.EndDate,
+                Capacity = dto.TotalSlots,
+                OfferId = offer.Id,
+                CreatedAt = DateTime.UtcNow,
+                Status = dto.TotalSlots > 0 ? "Available" : "Full",
+            }
+        );
+
         await _offerRepository.SaveChangesAsync();
+
+        await _hubContext.Clients.All.SendAsync(
+            "OfferCreated",
+            new
+            {
+                OfferId = offer.Id,
+                BusinessId = offer.BusinessId,
+                Status = offer.Status,
+            }
+        );
 
         return offer;
     }
 
-    public async Task<List<Offer>>
-        GetBusinessOffersAsync(
-            Guid businessId
-        )
+    public async Task<List<Offer>> GetBusinessOffersAsync(Guid businessId)
     {
         return await _offerRepository
-            .GetOffersByBusinessIdAsync(
-                businessId
-            );
+            .GetOffersByBusinessIdAsync(businessId);
+    }
+
+    public async Task<List<Offer>> GetAllOffersAsync()
+    {
+        return await _offerRepository.GetAllOffersAsync();
     }
 
     public async Task<Offer?> GetOfferByIdAsync(

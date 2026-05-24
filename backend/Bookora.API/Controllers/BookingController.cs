@@ -1,5 +1,6 @@
 using Bookora.API.DTOs.Booking;
 using Bookora.API.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Bookora.API.Controllers;
@@ -45,6 +46,16 @@ public class BookingController : ControllerBase
     {
         var bookings =
             await _bookingService.GetAllBookingsAsync();
+
+        return Ok(bookings);
+    }
+
+    [Authorize]
+    [HttpGet("my")]
+    public async Task<IActionResult> GetMyBookings()
+    {
+        var bookings =
+            await _bookingService.GetMyBusinessBookingsAsync(User);
 
         return Ok(bookings);
     }

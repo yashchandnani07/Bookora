@@ -32,10 +32,21 @@ public class BookingRepository : IBookingRepository
             .ToListAsync();
     }
 
+    public async Task<List<Booking>> GetByBusinessIdAsync(Guid businessId)
+    {
+        return await _context.Bookings
+            .Include(b => b.Offer)
+            .Include(b => b.Slot)
+            .Where(b => b.Offer.BusinessId == businessId)
+            .OrderByDescending(b => b.CreatedAt)
+            .ToListAsync();
+    }
+
     public async Task<Booking?> GetByIdAsync(Guid id)
     {
         return await _context.Bookings
             .Include(b => b.Offer)
+            .ThenInclude(o => o.Business)
             .Include(b => b.Slot)
             .FirstOrDefaultAsync(b => b.Id == id);
     }

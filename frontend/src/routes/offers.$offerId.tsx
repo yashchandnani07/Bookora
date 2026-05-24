@@ -1,8 +1,13 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { PublicNav } from "@/components/layout/PublicNav";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { offers } from "@/lib/sample-data";
+import { getOfferById } from "@/lib/api/offers";
+import type { Offer } from "@/lib/api/offers";
+import { getOfferSlots, type OfferSlot } from "@/lib/api/slots";
+import { subscribeToBookingUpdates } from "@/lib/realtime/bookings";
 import {
   ArrowRight,
   Calendar,
@@ -16,40 +21,146 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/offers/$offerId")({
-  loader: ({ params }) => {
-    const offer = offers.find((o) => o.id === params.offerId);
-    if (!offer) throw notFound();
-    return { offer };
-  },
-  head: ({ loaderData }) => ({
+  head: () => ({
     meta: [
-      { title: `${loaderData?.offer.title ?? "Offer"} · Bookora` },
-      {
-        name: "description",
-        content: `${loaderData?.offer.title} at ${loaderData?.offer.business} — book a live slot.`,
-      },
+      { title: "Offer - Bookora" },
+      { name: "description", content: "Book a live slot powered by Bookora." },
     ],
   }),
-  notFoundComponent: () => (
-    <div className="grid min-h-screen place-items-center">Offer not found.</div>
-  ),
-  errorComponent: () => (
-    <div className="grid min-h-screen place-items-center">Something went wrong.</div>
-  ),
   component: OfferDetail,
 });
 
-const SLOTS = [
-  { time: "06:00 AM", label: "Early", left: 4, total: 16 },
-  { time: "07:30 AM", label: "Morning", left: 0, total: 20 },
-  { time: "10:00 AM", label: "Mid-morning", left: 6, total: 12 },
-  { time: "06:30 PM", label: "Evening", left: 5, total: 24 },
-  { time: "08:00 PM", label: "Night", left: 0, total: 18 },
+const COVER_GRADIENTS = [
+  "from-amber-200 via-rose-200 to-orange-300",
+  "from-stone-200 via-amber-100 to-rose-200",
+  "from-emerald-200 via-lime-200 to-teal-200",
+  "from-purple-200 via-pink-100 to-rose-200",
+  "from-neutral-300 via-stone-200 to-zinc-300",
+  "from-zinc-300 via-stone-300 to-amber-200",
+  "from-orange-200 via-red-200 to-rose-300",
+  "from-sky-200 via-blue-100 to-indigo-200",
 ];
 
+function gradientForId(id: string) {
+  const idx =
+    id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % COVER_GRADIENTS.length;
+  return COVER_GRADIENTS[idx];
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatSlot(value: string) {
+  return new Date(value).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function OfferDetail() {
-  const { offer } = Route.useLoaderData();
-  const pct = (offer.booked / offer.total) * 100;
+  const { offerId } = Route.useParams();
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const { data: offer, isLoading, isError } = useQuery({
+    queryKey: ["offer", offerId],
+    queryFn: () => getOfferById(offerId),
+    retry: false,
+  });
+
+  const { data: slots = [], isLoading: slotsLoading } = useQuery({
+    queryKey: ["offer-slots", offerId],
+    queryFn: () => getOfferSlots(offerId),
+  });
+
+  useEffect(() => {
+    return subscribeToBookingUpdates((update) => {
+      if (update.offerId !== offerId) return;
+
+      queryClient.setQueryData<Offer>(["offer", offerId], (current) =>
+        current
+          ? {
+              ...current,
+              remainingSlots: update.remainingSlots,
+              totalSlots: update.totalSlots || current.totalSlots,
+            }
+          : current
+      );
+
+      queryClient.setQueryData<OfferSlot[]>(["offer-slots", offerId], (current) => {
+        if (!current) return current;
+
+        return current.map((slot) =>
+          slot.id === update.slotId
+            ? {
+                ...slot,
+                capacity: update.capacity || slot.capacity,
+                bookedCount: update.bookedCount,
+                remainingCapacity: update.remainingCapacity,
+                status: update.status,
+              }
+            : slot
+        );
+      });
+    });
+  }, [offerId, queryClient]);
+
+  useEffect(() => {
+    if (selectedSlotId || slots.length === 0) return;
+
+    const firstAvailable = slots.find(
+      (slot) => slot.status === "Available" && slot.remainingCapacity > 0
+    );
+
+    if (firstAvailable) {
+      setSelectedSlotId(firstAvailable.id);
+    }
+  }, [selectedSlotId, slots]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-canvas">
+        <PublicNav />
+        <div className="grid min-h-[60vh] place-items-center text-muted-foreground">
+          Loading offer...
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (isError || !offer) {
+    return (
+      <div className="bg-canvas">
+        <PublicNav />
+        <div className="grid min-h-[60vh] place-items-center">
+          <div className="text-center">
+            <p className="text-xl font-display">Offer not found</p>
+            <Link to="/offers" className="mt-4 inline-block text-sm underline">
+              Back to offers
+            </Link>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const booked = offer.totalSlots - offer.remainingSlots;
+  const pct = offer.totalSlots > 0 ? (booked / offer.totalSlots) * 100 : 0;
+  const discountPct =
+    offer.originalPrice > 0
+      ? Math.round((1 - offer.offerPrice / offer.originalPrice) * 100)
+      : 0;
+  const savings = offer.originalPrice - offer.offerPrice;
+
   return (
     <div className="bg-canvas">
       <PublicNav />
@@ -61,35 +172,49 @@ function OfferDetail() {
               Offers
             </Link>
             <span>/</span>
-            <span>{offer.category}</span>
+            <span>{offer.category || "General"}</span>
             <span>/</span>
-            <span className="text-foreground">{offer.business}</span>
+            <span className="text-foreground">{offer.business?.name ?? "-"}</span>
           </div>
+
           <div className="mt-6 grid gap-10 lg:grid-cols-[1.4fr_1fr]">
             <div>
-              <div className="aspect-[16/9] overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-amber-200 via-rose-200 to-orange-300" />
-              <div className="mt-6 flex items-center gap-3 text-xs">
-                <span className="rounded-full bg-foreground px-2.5 py-0.5 text-background">
-                  -{offer.discount}% off
-                </span>
+              <div
+                className={`aspect-[16/9] overflow-hidden rounded-2xl border border-border bg-gradient-to-br ${gradientForId(offer.id)}`}
+              />
+
+              <div className="mt-6 flex flex-wrap items-center gap-3 text-xs">
+                {discountPct > 0 && (
+                  <span className="rounded-full bg-foreground px-2.5 py-0.5 text-background">
+                    -{discountPct}% off
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5">
-                  <span className="pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-success" />{" "}
-                  Live · ends in {offer.endsIn}
+                  <span className="pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                  Live, ends {formatDate(offer.endDate)}
                 </span>
-                <span className="inline-flex items-center gap-1 text-muted-foreground">
-                  <MapPin className="h-3 w-3" /> {offer.city}
-                </span>
+                {offer.business?.city && (
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <MapPin className="h-3 w-3" /> {offer.business.city}
+                  </span>
+                )}
               </div>
+
               <h1 className="mt-4 font-display text-5xl leading-tight">{offer.title}</h1>
               <p className="mt-2 text-muted-foreground">
-                by <span className="text-foreground">{offer.business}</span>
+                by <span className="text-foreground">{offer.business?.name ?? "-"}</span>
               </p>
 
               <div className="mt-8 grid grid-cols-3 gap-3">
                 {[
                   { label: "Rating", value: "4.9", sub: "318 reviews", icon: Star },
-                  { label: "Duration", value: "60 min", sub: "per session", icon: Clock },
-                  { label: "Group", value: "1–4", sub: "people per booking", icon: Users },
+                  { label: "Duration", value: "1 slot", sub: "current MVP", icon: Clock },
+                  {
+                    label: "Per booking",
+                    value: `1-${offer.maxBookingPerCustomer}`,
+                    sub: "people",
+                    icon: Users,
+                  },
                 ].map((s) => (
                   <div key={s.label} className="rounded-xl border border-border bg-card p-4">
                     <s.icon className="h-4 w-4 text-muted-foreground" />
@@ -104,52 +229,50 @@ function OfferDetail() {
               <div className="prose mt-10 max-w-none">
                 <h2 className="font-display text-2xl">About this offer</h2>
                 <p className="text-muted-foreground">
-                  A guided session crafted by experienced instructors at {offer.business}. Built for
-                  all levels, with a curated atmosphere, premium equipment, and a small-group format
-                  designed to feel personal.
+                  {offer.description ||
+                    `A curated experience by ${offer.business?.name ?? "this venue"}.`}
                 </p>
                 <h3 className="mt-8 font-display text-xl">What's included</h3>
                 <ul className="grid gap-2 sm:grid-cols-2">
                   {[
-                    "60-minute curated session",
-                    "Equipment & mat included",
+                    "Curated session experience",
+                    "Equipment included",
                     "Complimentary refreshments",
-                    "Locker & towel service",
-                    "Trained, certified host",
-                    "Free reschedule up to 2h prior",
+                    "Locker and towel service",
+                    "Trained host",
+                    "Confirmation after booking",
                   ].map((x) => (
                     <li key={x} className="flex items-center gap-2 text-sm">
                       <Check className="h-4 w-4 text-success" /> {x}
                     </li>
                   ))}
                 </ul>
-                <h3 className="mt-8 font-display text-xl">Terms & conditions</h3>
-                <p className="text-sm text-muted-foreground">
-                  Booking is non-transferable. Cancellations within 2 hours of the slot are
-                  non-refundable. Please arrive 10 minutes early. Subject to availability.
-                </p>
               </div>
             </div>
 
             <aside className="lg:sticky lg:top-24 lg:self-start">
               <div className="rounded-2xl border border-border bg-card p-6 shadow-elegant">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-display text-4xl">₹{offer.price.toLocaleString()}</span>
-                  {offer.original > offer.price && (
+                  <span className="font-display text-4xl">
+                    Rs. {offer.offerPrice.toLocaleString()}
+                  </span>
+                  {offer.originalPrice > offer.offerPrice && (
                     <span className="text-muted-foreground line-through">
-                      ₹{offer.original.toLocaleString()}
+                      Rs. {offer.originalPrice.toLocaleString()}
                     </span>
                   )}
-                  <span className="ml-auto rounded-full bg-lime px-2 py-0.5 text-xs font-medium">
-                    Save ₹{(offer.original - offer.price).toLocaleString()}
-                  </span>
+                  {savings > 0 && (
+                    <span className="ml-auto rounded-full bg-lime px-2 py-0.5 text-xs font-medium">
+                      Save Rs. {savings.toLocaleString()}
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">Realtime availability</span>
                     <span className="font-mono">
-                      {offer.booked}/{offer.total}
+                      {booked}/{offer.totalSlots}
                     </span>
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -159,48 +282,77 @@ function OfferDetail() {
 
                 <div className="mt-6 space-y-1.5">
                   <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Select slot · Today
+                    Select slot
                   </div>
                   <div className="grid gap-2">
-                    {SLOTS.map((s, i) => {
-                      const full = s.left === 0;
-                      return (
-                        <button
-                          key={s.time}
-                          disabled={full}
-                          className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed ${
-                            i === 3
-                              ? "border-foreground bg-foreground/5"
-                              : "border-border bg-card hover:border-foreground/30 disabled:opacity-60"
-                          }`}
-                        >
-                          <div>
-                            <div className="text-sm font-medium">{s.time}</div>
-                            <div className="text-[11px] text-muted-foreground">{s.label}</div>
-                          </div>
-                          <div className="text-right text-xs">
-                            {full ? (
-                              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                Full · Join waitlist
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-success">
-                                <span className="h-1.5 w-1.5 rounded-full bg-success" /> {s.left}{" "}
-                                left
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {slotsLoading && (
+                      <div className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
+                        Loading slots...
+                      </div>
+                    )}
+
+                    {!slotsLoading && slots.length === 0 && (
+                      <div className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
+                        No slots are available for this offer yet.
+                      </div>
+                    )}
+
+                    {!slotsLoading &&
+                      slots.map((slot) => {
+                        const full =
+                          slot.remainingCapacity <= 0 || slot.status !== "Available";
+                        const selected = selectedSlotId === slot.id;
+
+                        return (
+                          <button
+                            key={slot.id}
+                            disabled={full}
+                            onClick={() => setSelectedSlotId(slot.id)}
+                            className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed ${
+                              selected
+                                ? "border-foreground bg-foreground/5"
+                                : "border-border bg-card hover:border-foreground/30 disabled:opacity-60"
+                            }`}
+                          >
+                            <div>
+                              <div className="text-sm font-medium">
+                                {formatSlot(slot.slotStart)}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                Ends {formatSlot(slot.slotEnd)}
+                              </div>
+                            </div>
+                            <div className="text-right text-xs">
+                              {full ? (
+                                <span className="text-muted-foreground">Full</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-success">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                                  {slot.remainingCapacity} left
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                   </div>
                 </div>
 
-                <Button asChild className="mt-6 w-full rounded-full" size="lg">
-                  <Link to="/book/$offerId" params={{ offerId: offer.id }}>
-                    Continue to book <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
+                {selectedSlotId ? (
+                  <Button asChild className="mt-6 w-full rounded-full" size="lg">
+                    <Link
+                      to="/book/$offerId"
+                      params={{ offerId: offer.id }}
+                      search={{ slotId: selectedSlotId }}
+                    >
+                      Continue to book <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button disabled className="mt-6 w-full rounded-full" size="lg">
+                    Select a slot to continue
+                  </Button>
+                )}
 
                 <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
@@ -216,8 +368,12 @@ function OfferDetail() {
                 <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Location
                 </div>
-                <div className="mt-2 font-medium">{offer.business}</div>
-                <div className="text-sm text-muted-foreground">{offer.city} · 2.4 km from you</div>
+                <div className="mt-2 font-medium">{offer.business?.name ?? "-"}</div>
+                <div className="text-sm text-muted-foreground">
+                  {offer.business?.address
+                    ? `${offer.business.address}, ${offer.business.city}`
+                    : offer.business?.city ?? "-"}
+                </div>
                 <div className="mt-3 aspect-[16/9] rounded-lg bg-gradient-to-br from-stone-200 via-canvas to-stone-100" />
               </div>
             </aside>
@@ -228,29 +384,14 @@ function OfferDetail() {
       <section className="border-b border-border">
         <div className="mx-auto max-w-7xl px-6 py-16">
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
-            <Calendar className="h-3 w-3" /> Similar offers
+            <Calendar className="h-3 w-3" /> More from this venue
           </div>
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {offers
-              .filter((o) => o.id !== offer.id)
-              .slice(0, 3)
-              .map((o) => (
-                <Link
-                  key={o.id}
-                  to="/offers/$offerId"
-                  params={{ offerId: o.id }}
-                  className="rounded-2xl border border-border bg-card p-4 hover:border-foreground/30"
-                >
-                  <div className="text-xs text-muted-foreground">{o.business}</div>
-                  <div className="mt-1 font-display text-lg">{o.title}</div>
-                  <div className="mt-3 flex items-baseline gap-2">
-                    <span className="font-display text-xl">₹{o.price}</span>
-                    <span className="text-xs text-muted-foreground line-through">
-                      ₹{o.original}
-                    </span>
-                  </div>
-                </Link>
-              ))}
+          <div className="mt-4 text-sm text-muted-foreground">
+            Discover more offers from {offer.business?.name ?? "this venue"} on the{" "}
+            <Link to="/offers" className="underline hover:text-foreground">
+              marketplace
+            </Link>
+            .
           </div>
         </div>
       </section>

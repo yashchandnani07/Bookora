@@ -4,6 +4,7 @@ using Bookora.API.Interfaces;
 using Bookora.API.Models;
 using Microsoft.AspNetCore.SignalR;
 using Bookora.API.Hubs;
+using System.Security.Claims;
 
 namespace Bookora.API.Services;
 
@@ -13,12 +14,14 @@ public class BookingService : IBookingService
     private readonly IBookingRepository _bookingRepository;
     private readonly IOfferRepository _offerRepository;
     private readonly IOfferSlotRepository _slotRepository;
+    private readonly IBusinessRepository _businessRepository;
     private readonly AppDbContext _context;
 
     public BookingService(
         IBookingRepository bookingRepository,
         IOfferRepository offerRepository,
         IOfferSlotRepository slotRepository,
+        IBusinessRepository businessRepository,
         AppDbContext context,
         IHubContext<BookingHub> hubContext
     )
@@ -26,6 +29,7 @@ public class BookingService : IBookingService
         _bookingRepository = bookingRepository;
         _offerRepository = offerRepository;
         _slotRepository = slotRepository;
+        _businessRepository = businessRepository;
         _context = context;
         _hubContext = hubContext;
     }
@@ -33,6 +37,9 @@ public class BookingService : IBookingService
     public async Task<(bool Success, string Message, Booking? Booking)>
         CreateBookingAsync(CreateBookingDto dto)
     {
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync();
+
         var offer = await _offerRepository.GetByIdAsync(dto.OfferId);
 
         if (offer == null)
@@ -64,6 +71,11 @@ public class BookingService : IBookingService
 
         var availableSeats = slot.Capacity - slot.BookedCount;
 
+        if (dto.PeopleCount <= 0)
+        {
+            return (false, "People count must be at least 1", null);
+        }
+
         if (dto.PeopleCount > availableSeats)
         {
             return (false, "Not enough seats available", null);
@@ -82,6 +94,7 @@ public class BookingService : IBookingService
 
         var booking = new Booking
         {
+            Id = Guid.NewGuid(),
             OfferId = dto.OfferId,
             SlotId = dto.SlotId,
             CustomerName = dto.CustomerName,
@@ -95,6 +108,10 @@ public class BookingService : IBookingService
         };
 
         slot.BookedCount += dto.PeopleCount;
+        offer.RemainingSlots = Math.Max(
+            0,
+            offer.RemainingSlots - dto.PeopleCount
+        );
 
         if (slot.BookedCount >= slot.Capacity)
         {
@@ -102,20 +119,25 @@ public class BookingService : IBookingService
         }
 
         _context.OfferSlots.Update(slot);
+        _context.Offers.Update(offer);
+        _context.Bookings.Add(booking);
 
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
+
         await _hubContext.Clients.All.SendAsync(
             "SlotUpdated",
             new
             {
                 SlotId = slot.Id,
+                OfferId = offer.Id,
                 Capacity = slot.Capacity,
                 BookedCount = slot.BookedCount,
                 RemainingCapacity = slot.RemainingCapacity,
+                RemainingSlots = offer.RemainingSlots,
+                TotalSlots = offer.TotalSlots,
                 Status = slot.Status,
             });
-
-        await _bookingRepository.CreateAsync(booking);
 
         return (true, "Booking created successfully", booking);
     }
@@ -123,6 +145,29 @@ public class BookingService : IBookingService
     public async Task<List<Booking>> GetAllBookingsAsync()
     {
         return await _bookingRepository.GetAllAsync();
+    }
+
+    public async Task<List<Booking>> GetMyBusinessBookingsAsync(
+        ClaimsPrincipal user
+    )
+    {
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return new List<Booking>();
+        }
+
+        var business = await _businessRepository
+            .GetBusinessByUserIdAsync(Guid.Parse(userId));
+
+        if (business == null)
+        {
+            return new List<Booking>();
+        }
+
+        return await _bookingRepository
+            .GetByBusinessIdAsync(business.Id);
     }
 
     public async Task<Booking?> GetBookingByIdAsync(Guid id)

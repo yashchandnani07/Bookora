@@ -1,36 +1,147 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { PublicNav } from "@/components/layout/PublicNav";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { offers } from "@/lib/sample-data";
-import { Check, Lock, ShieldCheck, ArrowRight } from "lucide-react";
+import { createBooking } from "@/lib/api/bookings";
+import { getOfferById } from "@/lib/api/offers";
+import { getOfferSlots } from "@/lib/api/slots";
+import { ArrowRight, Check, Loader2, Lock, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/book/$offerId")({
-  loader: ({ params }) => {
-    const offer = offers.find((o) => o.id === params.offerId);
-    if (!offer) throw notFound();
-    return { offer };
-  },
-  head: ({ loaderData }) => ({
+  validateSearch: (search: Record<string, unknown>) => ({
+    slotId: typeof search.slotId === "string" ? search.slotId : undefined,
+  }),
+  head: () => ({
     meta: [
-      { title: `Book · ${loaderData?.offer.title ?? "Offer"} · Bookora` },
+      { title: "Book - Bookora" },
       { name: "description", content: "Complete your Bookora reservation." },
     ],
   }),
-  notFoundComponent: () => (
-    <div className="grid min-h-screen place-items-center">Offer not found.</div>
-  ),
-  errorComponent: () => (
-    <div className="grid min-h-screen place-items-center">Something went wrong.</div>
-  ),
   component: Book,
 });
 
+function formatSlot(value: string) {
+  return new Date(value).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function Book() {
-  const { offer } = Route.useLoaderData();
+  const { offerId } = Route.useParams();
+  const { slotId } = Route.useSearch();
+  const navigate = useNavigate();
+
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [peopleCount, setPeopleCount] = useState(1);
+  const [specialNote, setSpecialNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const { data: offer, isLoading: offerLoading } = useQuery({
+    queryKey: ["offer", offerId],
+    queryFn: () => getOfferById(offerId),
+    retry: false,
+  });
+
+  const { data: slots = [], isLoading: slotsLoading } = useQuery({
+    queryKey: ["offer-slots", offerId],
+    queryFn: () => getOfferSlots(offerId),
+  });
+
+  const selectedSlot = useMemo(() => {
+    if (slotId) {
+      return slots.find((slot) => slot.id === slotId);
+    }
+
+    return slots.find(
+      (slot) => slot.status === "Available" && slot.remainingCapacity > 0
+    );
+  }, [slotId, slots]);
+
+  const maxPeople = Math.max(
+    1,
+    Math.min(
+      offer?.maxBookingPerCustomer ?? 1,
+      selectedSlot?.remainingCapacity ?? 1
+    )
+  );
+
+  async function handleSubmit() {
+    if (!offer || !selectedSlot) {
+      setError("Please select an available slot before booking.");
+      toast.error("Please select an available slot");
+      return;
+    }
+
+    if (!customerName.trim() || !customerPhone.trim()) {
+      setError("Customer name and phone number are required.");
+      toast.error("Name and phone are required");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const booking = await createBooking({
+        offerId: offer.id,
+        slotId: selectedSlot.id,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        customerEmail: customerEmail.trim() || undefined,
+        peopleCount,
+        specialNote: specialNote.trim() || undefined,
+      });
+
+      toast.success("Booking confirmed");
+      navigate({
+        to: "/booking-confirmed",
+        search: { bookingId: booking.id },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create booking.");
+      toast.error("Failed to create booking");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (offerLoading || slotsLoading) {
+    return (
+      <div className="bg-canvas">
+        <PublicNav />
+        <div className="grid min-h-[60vh] place-items-center text-muted-foreground">
+          Loading booking...
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!offer) {
+    return (
+      <div className="bg-canvas">
+        <PublicNav />
+        <div className="grid min-h-[60vh] place-items-center">Offer not found.</div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const total = offer.offerPrice * peopleCount;
+  const discount = Math.max(0, offer.originalPrice - offer.offerPrice) * peopleCount;
+
   return (
     <div className="bg-canvas">
       <PublicNav />
@@ -40,7 +151,9 @@ function Book() {
             {["Slot", "Your details", "Confirm"].map((s, i) => (
               <div key={s} className="flex items-center gap-2">
                 <span
-                  className={`grid h-5 w-5 place-items-center rounded-full text-[10px] ${i <= 1 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"}`}
+                  className={`grid h-5 w-5 place-items-center rounded-full text-[10px] ${
+                    i <= 1 ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+                  }`}
                 >
                   {i + 1}
                 </span>
@@ -54,17 +167,36 @@ function Book() {
             <div>
               <h1 className="font-display text-4xl">Your details</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                We'll send your confirmation and a calendar invite to these contacts.
+                We'll send your confirmation to these contact details.
               </p>
+
+              {error && (
+                <div className="mt-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
+
+              {!selectedSlot && (
+                <div className="mt-6 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning">
+                  No available slot was selected for this offer.
+                </div>
+              )}
 
               <form className="mt-8 space-y-5" onSubmit={(e) => e.preventDefault()}>
                 <div className="grid gap-5 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>Customer name</Label>
-                    <Input placeholder="Jordan Kim" className="bg-card" />
-                    <div className="text-[11px] text-success inline-flex items-center gap-1">
-                      <Check className="h-3 w-3" /> Looks good
-                    </div>
+                    <Input
+                      placeholder="Jordan Kim"
+                      className="bg-card"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                    />
+                    {customerName.trim() && (
+                      <div className="text-[11px] text-success inline-flex items-center gap-1">
+                        <Check className="h-3 w-3" /> Looks good
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label>Phone number</Label>
@@ -72,57 +204,92 @@ function Book() {
                       <span className="inline-flex items-center rounded-l-md border border-r-0 border-input bg-card px-3 text-sm text-muted-foreground">
                         +91
                       </span>
-                      <Input placeholder="98765 43210" className="rounded-l-none bg-card" />
+                      <Input
+                        placeholder="98765 43210"
+                        className="rounded-l-none bg-card"
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                      />
                     </div>
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>
-                    Email <span className="text-muted-foreground text-xs">· optional</span>
+                    Email <span className="text-muted-foreground text-xs">optional</span>
                   </Label>
-                  <Input type="email" placeholder="you@email.com" className="bg-card" />
+                  <Input
+                    type="email"
+                    placeholder="you@email.com"
+                    className="bg-card"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                  />
                 </div>
                 <div className="grid gap-5 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>Selected slot</Label>
                     <div className="flex items-center justify-between rounded-md border border-input bg-card px-3 py-2 text-sm">
-                      <span>Today · 6:30 PM · Peak Hour Training</span>
-                      <button className="text-xs text-muted-foreground hover:text-foreground">
+                      <span>
+                        {selectedSlot
+                          ? `${formatSlot(selectedSlot.slotStart)} - ${formatSlot(
+                              selectedSlot.slotEnd
+                            )}`
+                          : "No available slot"}
+                      </span>
+                      <Link
+                        to="/offers/$offerId"
+                        params={{ offerId }}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
                         Change
-                      </button>
+                      </Link>
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Number of people</Label>
                     <div className="inline-flex items-center gap-3 rounded-md border border-input bg-card px-3 py-2">
-                      <button className="grid h-6 w-6 place-items-center rounded-md hover:bg-muted">
-                        −
+                      <button
+                        type="button"
+                        className="grid h-6 w-6 place-items-center rounded-md hover:bg-muted"
+                        onClick={() => setPeopleCount((value) => Math.max(1, value - 1))}
+                      >
+                        -
                       </button>
-                      <span className="font-mono text-sm">2</span>
-                      <button className="grid h-6 w-6 place-items-center rounded-md hover:bg-muted">
+                      <span className="font-mono text-sm">{peopleCount}</span>
+                      <button
+                        type="button"
+                        className="grid h-6 w-6 place-items-center rounded-md hover:bg-muted"
+                        onClick={() =>
+                          setPeopleCount((value) => Math.min(maxPeople, value + 1))
+                        }
+                      >
                         +
                       </button>
-                      <span className="ml-auto text-xs text-muted-foreground">Max 4</span>
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        Max {maxPeople}
+                      </span>
                     </div>
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>
-                    Special note <span className="text-muted-foreground text-xs">· optional</span>
+                    Special note <span className="text-muted-foreground text-xs">optional</span>
                   </Label>
                   <Textarea
-                    placeholder="Allergies, accessibility needs, special requests…"
+                    placeholder="Allergies, accessibility needs, special requests..."
                     className="bg-card"
+                    value={specialNote}
+                    onChange={(e) => setSpecialNote(e.target.value)}
                   />
                 </div>
 
                 <div className="rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground">
                   <div className="inline-flex items-center gap-1 text-foreground">
-                    <ShieldCheck className="h-3.5 w-3.5" /> Secure & private
+                    <ShieldCheck className="h-3.5 w-3.5" /> Secure and private
                   </div>
                   <p className="mt-1">
-                    Your details are encrypted and only shared with {offer.business} to manage your
-                    booking.
+                    Your details are only shared with {offer.business?.name ?? "the venue"} to
+                    manage your booking.
                   </p>
                 </div>
 
@@ -132,12 +299,23 @@ function Book() {
                     params={{ offerId: offer.id }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
-                    ← Back
+                    Back
                   </Link>
-                  <Button asChild size="lg" className="rounded-full">
-                    <Link to="/booking-confirmed">
-                      Confirm booking <ArrowRight className="h-4 w-4" />
-                    </Link>
+                  <Button
+                    size="lg"
+                    className="rounded-full"
+                    onClick={handleSubmit}
+                    disabled={submitting || !selectedSlot}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Confirming...
+                      </>
+                    ) : (
+                      <>
+                        Confirm booking <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </form>
@@ -153,26 +331,25 @@ function Book() {
                   <div>
                     <div className="text-sm font-medium leading-tight">{offer.title}</div>
                     <div className="text-xs text-muted-foreground">
-                      {offer.business} · {offer.city}
+                      {offer.business?.name ?? "Venue"} - {offer.business?.city ?? "City"}
                     </div>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
-                  <Row label={`₹${offer.price} × 2`} value={`₹${offer.price * 2}`} />
-                  <Row label="Platform fee" value="₹0" muted />
-                  <Row label="Discount" value={`− ₹${(offer.original - offer.price) * 2}`} muted />
+                  <Row
+                    label={`Rs. ${offer.offerPrice.toLocaleString()} x ${peopleCount}`}
+                    value={`Rs. ${total.toLocaleString()}`}
+                  />
+                  <Row label="Platform fee" value="Rs. 0" muted />
+                  <Row label="Discount" value={`- Rs. ${discount.toLocaleString()}`} muted />
                 </div>
                 <div className="mt-4 flex items-baseline justify-between border-t border-border pt-4">
                   <span className="text-sm text-muted-foreground">Total</span>
-                  <span className="font-display text-3xl">₹{offer.price * 2}</span>
-                </div>
-                <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/60 p-2 text-[11px] text-muted-foreground">
-                  <span className="pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-success" />
-                  Slot reserved for 04:38 while you complete checkout
+                  <span className="font-display text-3xl">Rs. {total.toLocaleString()}</span>
                 </div>
               </div>
               <div className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Lock className="h-3 w-3" /> Payments processed securely
+                <Lock className="h-3 w-3" /> Booking confirmed instantly
               </div>
             </aside>
           </div>

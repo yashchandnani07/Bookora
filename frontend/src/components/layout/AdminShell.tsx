@@ -1,10 +1,13 @@
-import { AdminSidebar } from "./AdminSidebar";
+import { AdminSidebar, MobileAdminNav } from "./AdminSidebar";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-canvas">
+    <div className="min-h-screen bg-canvas lg:flex">
       <AdminSidebar />
-      <main className="flex min-h-screen flex-1 flex-col">{children}</main>
+      <MobileAdminNav />
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
+        {children}
+      </main>
     </div>
   );
 }

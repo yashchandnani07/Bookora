@@ -31,6 +31,14 @@ public class OfferRepository : IOfferRepository
             .ToListAsync();
     }
 
+    public async Task<List<Offer>> GetAllOffersAsync()
+    {
+        return await _context.Offers
+            .Include(x => x.Business)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync();
+    }
+
     public async Task<Offer?> GetOfferByIdAsync(
         Guid id
     )

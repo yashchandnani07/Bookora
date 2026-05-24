@@ -1,65 +1,156 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/brand/Logo";
-import { ArrowRight, Github } from "lucide-react";
+
+import { ArrowRight, Github, Loader2 } from "lucide-react";
+
+import { login } from "@/lib/api/auth";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/signin")({
   head: () => ({
     meta: [
       { title: "Sign in · Bookora" },
-      { name: "description", content: "Sign in to your Bookora operator workspace." },
+      {
+        name: "description",
+        content: "Sign in to your Bookora operator workspace.",
+      },
     ],
   }),
   component: SignIn,
 });
 
 function SignIn() {
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    setError("");
+
+    try {
+      setLoading(true);
+
+      const response = await login({
+        email,
+        password,
+      });
+
+      localStorage.setItem("token", response.token);
+      toast.success("Signed in");
+
+      navigate({
+        to: "/admin/dashboard",
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Invalid email or password.");
+      toast.error("Invalid email or password");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="flex flex-col px-6 py-8 lg:px-16">
         <Logo />
+
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
-          <h1 className="font-display text-4xl tracking-tight">Welcome back.</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Sign in to your operator console.</p>
+          <h1 className="font-display text-4xl tracking-tight">
+            Welcome back.
+          </h1>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sign in to your operator console.
+          </p>
 
           <div className="mt-8 grid grid-cols-2 gap-3">
             <Button variant="outline" className="bg-card">
-              <GoogleIcon /> Google
+              <GoogleIcon />
+              Google
             </Button>
+
             <Button variant="outline" className="bg-card">
-              <Github className="h-4 w-4" /> GitHub
+              <Github className="h-4 w-4" />
+              GitHub
             </Button>
           </div>
+
           <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" /> or with email{" "}
+            <span className="h-px flex-1 bg-border" />
+            or with email
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
+
               <Input
                 id="email"
                 type="email"
                 placeholder="hello@yourbusiness.com"
                 className="bg-card"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <a href="#" className="text-xs text-muted-foreground hover:text-foreground">
+
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
                   Forgot?
-                </a>
+                </button>
               </div>
-              <Input id="password" type="password" placeholder="••••••••" className="bg-card" />
+
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                className="bg-card"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
-            <Button asChild type="submit" className="w-full rounded-full">
-              <Link to="/admin/dashboard">
-                Sign in <ArrowRight className="h-4 w-4" />
-              </Link>
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full rounded-full"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  Sign in
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </Button>
           </form>
 
@@ -70,29 +161,44 @@ function SignIn() {
             </Link>
           </p>
         </div>
-        <div className="text-xs text-muted-foreground">© 2026 Bookora Labs</div>
+
+        <div className="text-xs text-muted-foreground">
+          © 2026 Bookora Labs
+        </div>
       </div>
 
       <div className="relative hidden border-l border-border bg-card lg:block">
         <div className="absolute inset-0 dot-grid opacity-60 [mask-image:radial-gradient(ellipse_at_top_right,black,transparent_70%)]" />
+
         <div className="relative flex h-full flex-col justify-between p-12">
           <blockquote className="max-w-md font-display text-3xl leading-snug">
-            "We went from spreadsheet chaos to a 79% slot fill-rate. Bookora is the operations layer
-            I always wanted."
+            "We went from spreadsheet chaos to a 79% slot fill-rate.
+            Bookora is the operations layer I always wanted."
           </blockquote>
+
           <div className="space-y-4">
             <div className="rounded-xl border border-border bg-canvas p-4 shadow-card">
               <div className="flex items-center justify-between text-xs">
-                <div className="font-medium">Peak Hour Training · 6:30 PM</div>
+                <div className="font-medium">
+                  Peak Hour Training · 6:30 PM
+                </div>
+
                 <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] text-success">
                   79% booked
                 </span>
               </div>
+
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div className="h-full bg-foreground" style={{ width: "79%" }} />
+                <div
+                  className="h-full bg-foreground"
+                  style={{ width: "79%" }}
+                />
               </div>
             </div>
-            <div className="text-xs text-muted-foreground">— Meera N., Studio Linea</div>
+
+            <div className="text-xs text-muted-foreground">
+              — Meera N., Studio Linea
+            </div>
           </div>
         </div>
       </div>

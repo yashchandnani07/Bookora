@@ -1,70 +1,153 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { AdminTopbar } from "@/components/layout/AdminTopbar";
-import { bookings, offers } from "@/lib/sample-data";
-import { ArrowDown, ArrowUp, ArrowUpRight, Calendar, Clock, Tag, Users } from "lucide-react";
+import { getMyBookings } from "@/lib/api/bookings";
+import type { Booking } from "@/lib/api/bookings";
+import { getMyOffers } from "@/lib/api/offers";
+import type { Offer } from "@/lib/api/offers";
+import { ArrowUp, ArrowUpRight, Calendar, Clock, Tag, Users } from "lucide-react";
 
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({
     meta: [
-      { title: "Dashboard · Bookora" },
+      { title: "Dashboard - Bookora" },
       { name: "description", content: "Realtime operator dashboard." },
     ],
   }),
   component: Dashboard,
 });
 
-const STATS = [
-  { label: "Total offers", value: "24", delta: "+3", up: true, icon: Tag, sub: "since last week" },
-  {
-    label: "Active offers",
-    value: "12",
-    delta: "+2",
-    up: true,
-    icon: Calendar,
-    sub: "3 expiring today",
-  },
-  {
-    label: "Total bookings",
-    value: "1,284",
-    delta: "+18.2%",
-    up: true,
-    icon: Users,
-    sub: "vs. last month",
-  },
-  {
-    label: "Today's bookings",
-    value: "218",
-    delta: "+14",
-    up: true,
-    icon: Clock,
-    sub: "live · last hour: 23",
-  },
-];
+function isToday(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+
+  return date.toDateString() === today.toDateString();
+}
+
+function formatSlot(start?: string) {
+  if (!start) return "-";
+
+  return new Date(start).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function bookedForOffer(offer: Offer) {
+  return Math.max(0, offer.totalSlots - offer.remainingSlots);
+}
 
 function Dashboard() {
+  const {
+    data: offers = [],
+    isLoading: offersLoading,
+    isError: offersError,
+  } = useQuery({
+    queryKey: ["offers", "my"],
+    queryFn: getMyOffers,
+  });
+
+  const {
+    data: bookings = [],
+    isLoading: bookingsLoading,
+    isError: bookingsError,
+  } = useQuery({
+    queryKey: ["bookings", "my"],
+    queryFn: getMyBookings,
+  });
+
+  const loading = offersLoading || bookingsLoading;
+  const hasError = offersError || bookingsError;
+
+  const metrics = useMemo(() => {
+    const activeOffers = offers.filter((offer) => offer.status === "Active");
+    const totalSeats = offers.reduce((sum, offer) => sum + offer.totalSlots, 0);
+    const remainingSeats = offers.reduce((sum, offer) => sum + offer.remainingSlots, 0);
+    const bookedSeats = totalSeats - remainingSeats;
+    const todayBookings = bookings.filter((booking) => isToday(booking.createdAt));
+    const fillRate = totalSeats > 0 ? Math.round((bookedSeats / totalSeats) * 100) : 0;
+    const revenue = bookings.reduce((sum, booking) => {
+      return sum + (booking.offer?.offerPrice ?? 0) * booking.peopleCount;
+    }, 0);
+
+    return {
+      activeOffers,
+      totalSeats,
+      remainingSeats,
+      bookedSeats,
+      todayBookings,
+      fillRate,
+      revenue,
+    };
+  }, [bookings, offers]);
+
+  const stats = [
+    {
+      label: "Total offers",
+      value: String(offers.length),
+      icon: Tag,
+      sub: `${metrics.activeOffers.length} active`,
+    },
+    {
+      label: "Active offers",
+      value: String(metrics.activeOffers.length),
+      icon: Calendar,
+      sub: `${offers.length - metrics.activeOffers.length} inactive or draft`,
+    },
+    {
+      label: "Total bookings",
+      value: String(bookings.length),
+      icon: Users,
+      sub: `${metrics.bookedSeats} seats booked`,
+    },
+    {
+      label: "Today's bookings",
+      value: String(metrics.todayBookings.length),
+      icon: Clock,
+      sub: `Rs. ${metrics.revenue.toLocaleString()} total revenue`,
+    },
+  ];
+
+  const recentBookings = bookings.slice(0, 6);
+  const topOffers = [...offers]
+    .sort((a, b) => bookedForOffer(b) - bookedForOffer(a))
+    .slice(0, 4);
+
   return (
     <>
-      <AdminTopbar title="Overview" subtitle="Thursday, 14 May · 218 bookings today" />
+      <AdminTopbar
+        title="Overview"
+        subtitle={
+          loading
+            ? "Loading live business data"
+            : `${bookings.length} bookings, ${offers.length} offers`
+        }
+      />
+
+      {hasError && (
+        <div className="mx-6 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive lg:mx-10">
+          Failed to load dashboard data. Make sure you are signed in as a business owner.
+        </div>
+      )}
+
       <div className="space-y-8 p-6 lg:p-10">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <div key={s.label} className="rounded-2xl border border-border bg-card p-5">
               <div className="flex items-start justify-between">
                 <s.icon className="h-4 w-4 text-muted-foreground" />
-                <span
-                  className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] ${s.up ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
-                >
-                  {s.up ? (
-                    <ArrowUp className="h-2.5 w-2.5" />
-                  ) : (
-                    <ArrowDown className="h-2.5 w-2.5" />
-                  )}{" "}
-                  {s.delta}
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] text-success">
+                  <ArrowUp className="h-2.5 w-2.5" /> live
                 </span>
               </div>
-              <div className="mt-4 font-display text-4xl tracking-tight">{s.value}</div>
+              <div className="mt-4 font-display text-4xl tracking-tight">
+                {loading ? "-" : s.value}
+              </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {s.label} · <span className="text-foreground/60">{s.sub}</span>
+                {s.label} - <span className="text-foreground/60">{s.sub}</span>
               </div>
             </div>
           ))}
@@ -74,66 +157,39 @@ function Dashboard() {
           <section className="rounded-2xl border border-border bg-card">
             <header className="flex items-center justify-between border-b border-border p-5">
               <div>
-                <h2 className="font-display text-xl">Bookings · last 14 days</h2>
-                <p className="text-xs text-muted-foreground">Hourly · realtime</p>
+                <h2 className="font-display text-xl">Capacity usage</h2>
+                <p className="text-xs text-muted-foreground">Real seats across your offers</p>
               </div>
-              <div className="flex items-center gap-1 rounded-full border border-border bg-canvas p-0.5 text-xs">
-                {["Day", "Week", "Month"].map((t, i) => (
-                  <button
-                    key={t}
-                    className={`rounded-full px-3 py-1 ${i === 1 ? "bg-foreground text-background" : "text-muted-foreground"}`}
-                  >
-                    {t}
-                  </button>
-                ))}
+              <div className="rounded-full border border-border bg-canvas px-3 py-1 text-xs">
+                {metrics.fillRate}% filled
               </div>
             </header>
             <div className="p-5">
-              <div className="flex h-56 items-end gap-1.5">
-                {[
-                  30, 42, 38, 55, 48, 65, 72, 62, 80, 72, 88, 74, 92, 85, 90, 72, 68, 80, 95, 108,
-                  98, 114, 128, 118, 132,
-                ].map((h, i) => (
-                  <div key={i} className="group relative flex-1">
-                    <div
-                      className="rounded-t-sm bg-foreground/80 group-hover:bg-foreground"
-                      style={{ height: `${h * 1.4}px` }}
-                    />
-                    {i === 14 && (
-                      <div className="absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[10px] text-background">
-                        Today · 218
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="h-4 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full bg-foreground"
+                  style={{ width: `${metrics.fillRate}%` }}
+                />
               </div>
-              <div className="mt-4 flex justify-between text-[10px] text-muted-foreground">
-                {[
-                  "May 1",
-                  "",
-                  "",
-                  "",
-                  "",
-                  "May 6",
-                  "",
-                  "",
-                  "",
-                  "",
-                  "May 11",
-                  "",
-                  "",
-                  "",
-                  "Today",
-                ].map((d, i) => (
-                  <span key={i}>{d}</span>
-                ))}
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <Mini
+                  label="Booked seats"
+                  value={String(metrics.bookedSeats)}
+                  sub={`of ${metrics.totalSeats}`}
+                />
+                <Mini
+                  label="Available seats"
+                  value={String(metrics.remainingSeats)}
+                  sub={`across ${offers.length} offers`}
+                  border
+                />
+                <Mini
+                  label="Conversion"
+                  value={`${metrics.fillRate}%`}
+                  sub="booked capacity"
+                />
               </div>
             </div>
-            <footer className="grid grid-cols-3 border-t border-border text-sm">
-              <Mini label="Booked seats" value="3,420" sub="of 4,800" />
-              <Mini label="Available seats" value="1,380" sub="across 12 offers" border />
-              <Mini label="Conversion" value="37.2%" sub="+8.8 pp" />
-            </footer>
           </section>
 
           <section className="rounded-2xl border border-border bg-card">
@@ -142,36 +198,21 @@ function Dashboard() {
                 <h2 className="font-display text-xl">Live activity</h2>
                 <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
                   <span className="pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-success" />{" "}
-                  Realtime stream
+                  Latest bookings
                 </p>
               </div>
-              <button className="text-xs text-muted-foreground hover:text-foreground">
+              <Link to="/admin/bookings" className="text-xs text-muted-foreground hover:text-foreground">
                 View all
-              </button>
+              </Link>
             </header>
             <ul className="divide-y divide-border">
-              {bookings.slice(0, 6).map((b) => (
-                <li key={b.ref} className="flex items-center gap-3 p-4">
-                  <span className="grid h-8 w-8 place-items-center rounded-full bg-muted text-xs">
-                    {b.customer
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm">
-                      <span className="font-medium">{b.customer}</span> · {b.offer}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {b.slot} · {b.people} {b.people === 1 ? "person" : "people"}
-                    </div>
-                  </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${badgeFor(b.status)}`}>
-                    {b.status}
-                  </span>
-                </li>
-              ))}
+              {recentBookings.length === 0 ? (
+                <li className="p-5 text-sm text-muted-foreground">No bookings yet.</li>
+              ) : (
+                recentBookings.map((booking) => (
+                  <ActivityItem key={booking.id} booking={booking} />
+                ))
+              )}
             </ul>
           </section>
         </div>
@@ -180,7 +221,7 @@ function Dashboard() {
           <header className="flex items-center justify-between border-b border-border p-5">
             <div>
               <h2 className="font-display text-xl">Recent bookings</h2>
-              <p className="text-xs text-muted-foreground">Most recent · all offers</p>
+              <p className="text-xs text-muted-foreground">Most recent customer reservations</p>
             </div>
             <Link
               to="/admin/bookings"
@@ -203,29 +244,45 @@ function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {bookings.slice(0, 6).map((b) => (
-                  <tr
-                    key={b.ref}
-                    className="border-b border-border last:border-0 hover:bg-muted/40"
-                  >
-                    <Td className="font-mono text-xs">{b.ref}</Td>
-                    <Td>
-                      {b.customer}
-                      <div className="text-xs text-muted-foreground">{b.phone}</div>
-                    </Td>
-                    <Td>{b.offer}</Td>
-                    <Td className="text-muted-foreground">{b.slot}</Td>
-                    <Td>{b.people}</Td>
-                    <Td>₹{b.total.toLocaleString()}</Td>
-                    <Td>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] ${badgeFor(b.status)}`}
-                      >
-                        {b.status}
-                      </span>
+                {recentBookings.length === 0 ? (
+                  <tr>
+                    <Td className="text-muted-foreground" colSpan={7}>
+                      No bookings yet.
                     </Td>
                   </tr>
-                ))}
+                ) : (
+                  recentBookings.map((booking) => (
+                    <tr
+                      key={booking.id}
+                      className="border-b border-border last:border-0 hover:bg-muted/40"
+                    >
+                      <Td className="font-mono text-xs">{booking.bookingReference}</Td>
+                      <Td>
+                        {booking.customerName}
+                        <div className="text-xs text-muted-foreground">
+                          {booking.customerPhone}
+                        </div>
+                      </Td>
+                      <Td>{booking.offer?.title ?? "-"}</Td>
+                      <Td className="text-muted-foreground">
+                        {formatSlot(booking.slot?.slotStart)}
+                      </Td>
+                      <Td>{booking.peopleCount}</Td>
+                      <Td>
+                        Rs. {((booking.offer?.offerPrice ?? 0) * booking.peopleCount).toLocaleString()}
+                      </Td>
+                      <Td>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] ${badgeFor(
+                            booking.status
+                          )}`}
+                        >
+                          {booking.status}
+                        </span>
+                      </Td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -233,77 +290,130 @@ function Dashboard() {
 
         <section className="grid gap-6 lg:grid-cols-3">
           <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="text-xs text-muted-foreground">Slot utilization · today</div>
+            <div className="text-xs text-muted-foreground">Slot utilization</div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="font-display text-4xl">71%</span>
-              <span className="text-xs text-success">+6 pp</span>
+              <span className="font-display text-4xl">{metrics.fillRate}%</span>
+              <span className="text-xs text-success">live</span>
             </div>
             <div className="mt-4 space-y-2">
-              {[
-                ["Morning", 84],
-                ["Afternoon", 62],
-                ["Evening", 89],
-                ["Late night", 31],
-              ].map(([l, v]) => (
-                <div key={l as string}>
-                  <div className="flex justify-between text-xs">
-                    <span>{l}</span>
-                    <span className="font-mono text-muted-foreground">{v}%</span>
+              {topOffers.map((offer) => {
+                const booked = bookedForOffer(offer);
+                const pct =
+                  offer.totalSlots > 0 ? Math.round((booked / offer.totalSlots) * 100) : 0;
+
+                return (
+                  <div key={offer.id}>
+                    <div className="flex justify-between text-xs">
+                      <span className="truncate pr-3">{offer.title}</span>
+                      <span className="font-mono text-muted-foreground">{pct}%</span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-foreground" style={{ width: `${pct}%` }} />
+                    </div>
                   </div>
-                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-foreground" style={{ width: `${v}%` }} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="text-xs text-muted-foreground">Top offers · 7 days</div>
+            <div className="text-xs text-muted-foreground">Top offers</div>
             <div className="mt-3 space-y-3">
-              {offers.slice(0, 4).map((o) => (
-                <div key={o.id} className="flex items-center gap-3">
-                  <span className="grid h-8 w-8 place-items-center rounded-md bg-gradient-to-br from-amber-200 to-rose-200 text-[10px] font-mono">
-                    {o.id.slice(-2)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{o.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {o.booked} booked · {o.total - o.booked} left
+              {topOffers.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No offers yet.</div>
+              ) : (
+                topOffers.map((offer) => {
+                  const booked = bookedForOffer(offer);
+
+                  return (
+                    <div key={offer.id} className="flex items-center gap-3">
+                      <span className="grid h-8 w-8 place-items-center rounded-md bg-gradient-to-br from-amber-200 to-rose-200 text-[10px] font-mono">
+                        {offer.id.slice(-2)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{offer.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {booked} booked - {offer.remainingSlots} left
+                        </div>
+                      </div>
+                      <span className="font-mono text-xs">
+                        Rs. {(offer.offerPrice * booked).toLocaleString()}
+                      </span>
                     </div>
-                  </div>
-                  <span className="font-mono text-xs">
-                    ₹{(o.price * o.booked).toLocaleString()}
-                  </span>
-                </div>
-              ))}
+                  );
+                })
+              )}
             </div>
           </div>
 
           <div className="rounded-2xl border border-border bg-foreground p-5 text-background">
             <div className="text-xs text-background/60">Realtime engine</div>
-            <div className="mt-2 font-display text-4xl">
-              42<span className="text-lg text-background/60">ms</span>
+            <div className="mt-2 font-display text-4xl">Live</div>
+            <div className="text-xs text-background/60">
+              Marketplace capacity updates after every booking.
             </div>
-            <div className="text-xs text-background/60">Avg booking latency, last 60s</div>
             <div className="mt-4 flex h-16 items-end gap-1">
-              {[
-                40, 42, 38, 55, 48, 45, 52, 42, 38, 46, 50, 42, 44, 40, 42, 44, 38, 42, 40, 42, 38,
-                40,
-              ].map((h, i) => (
-                <div key={i} className="flex-1 rounded-sm bg-lime/70" style={{ height: `${h}%` }} />
-              ))}
+              {topOffers.length === 0
+                ? Array.from({ length: 12 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex-1 rounded-sm bg-lime/40"
+                      style={{ height: `${20 + i * 4}%` }}
+                    />
+                  ))
+                : topOffers.map((offer) => {
+                    const booked = bookedForOffer(offer);
+                    const pct =
+                      offer.totalSlots > 0
+                        ? Math.max(8, Math.round((booked / offer.totalSlots) * 100))
+                        : 8;
+
+                    return (
+                      <div
+                        key={offer.id}
+                        className="flex-1 rounded-sm bg-lime/70"
+                        style={{ height: `${pct}%` }}
+                      />
+                    );
+                  })}
             </div>
             <div className="mt-4 flex items-center justify-between text-xs">
               <span className="inline-flex items-center gap-1">
                 <span className="pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-lime" /> Healthy
               </span>
-              <span className="text-background/60">99.99% uptime</span>
+              <span className="text-background/60">{metrics.remainingSeats} seats open</span>
             </div>
           </div>
         </section>
       </div>
     </>
+  );
+}
+
+function ActivityItem({ booking }: { booking: Booking }) {
+  return (
+    <li className="flex items-center gap-3 p-4">
+      <span className="grid h-8 w-8 place-items-center rounded-full bg-muted text-xs">
+        {booking.customerName
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .slice(0, 2)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm">
+          <span className="font-medium">{booking.customerName}</span> -{" "}
+          {booking.offer?.title ?? "Offer"}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {formatSlot(booking.slot?.slotStart)} - {booking.peopleCount}{" "}
+          {booking.peopleCount === 1 ? "person" : "people"}
+        </div>
+      </div>
+      <span className={`rounded-full px-2 py-0.5 text-[10px] ${badgeFor(booking.status)}`}>
+        {booking.status}
+      </span>
+    </li>
   );
 }
 
@@ -319,18 +429,30 @@ function Mini({
   border?: boolean;
 }) {
   return (
-    <div className={`p-5 ${border ? "border-x border-border" : ""}`}>
+    <div className={`rounded-xl bg-canvas p-5 ${border ? "sm:border-x sm:border-border" : ""}`}>
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 font-display text-2xl">{value}</div>
       <div className="text-[11px] text-muted-foreground">{sub}</div>
     </div>
   );
 }
+
 const Th = ({ children }: { children: React.ReactNode }) => (
   <th className="px-5 py-3 text-left font-medium">{children}</th>
 );
-const Td = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-  <td className={`px-5 py-3 align-top ${className}`}>{children}</td>
+
+const Td = ({
+  children,
+  className = "",
+  colSpan,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  colSpan?: number;
+}) => (
+  <td colSpan={colSpan} className={`px-5 py-3 align-top ${className}`}>
+    {children}
+  </td>
 );
 
 export function badgeFor(s: string) {

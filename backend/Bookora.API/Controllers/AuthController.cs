@@ -43,12 +43,25 @@ public class AuthController : ControllerBase
 
         _context.Users.Add(user);
 
+        var business = new Bookora.API.Models.Business
+        {
+            Id = Guid.NewGuid(),
+            Name = dto.BusinessName,
+            BusinessType = dto.BusinessType,
+            OwnerName = dto.FullName,
+            Email = dto.Email,
+            UserId = user.Id,
+            Slug = dto.BusinessName.ToLower().Replace(" ", "-"),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Businesses.Add(business);
+
         await _context.SaveChangesAsync();
 
-        return Ok(new
-        {
-            message = "User registered successfully"
-        });
+        var token = _tokenService.CreateToken(user);
+
+        return Ok(new { token });
     }
 
     [HttpPost("login")]

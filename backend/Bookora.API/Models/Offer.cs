@@ -10,6 +10,8 @@ public class Offer
     public string Description { get; set; }
         = string.Empty;
 
+    public string Category { get; set; } = string.Empty;
+
     public decimal OriginalPrice { get; set; }
 
     public decimal OfferPrice { get; set; }

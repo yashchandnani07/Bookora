@@ -8,6 +8,8 @@ public interface IBookingRepository
 
     Task<List<Booking>> GetAllAsync();
 
+    Task<List<Booking>> GetByBusinessIdAsync(Guid businessId);
+
     Task<Booking?> GetByIdAsync(Guid id);
 
     Task<int> GetCustomerBookingCountAsync(
