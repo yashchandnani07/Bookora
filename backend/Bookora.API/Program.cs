@@ -22,6 +22,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
+        var allowedOrigins =
+            builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ??
+            Array.Empty<string>();
+
         policy
             .SetIsOriginAllowed(origin =>
             {
@@ -30,11 +34,15 @@ builder.Services.AddCors(options =>
                     return false;
                 }
 
-                return uri.Host == "localhost" ||
-                       uri.Host == "127.0.0.1" ||
-                       uri.Host.StartsWith("10.") ||
-                       uri.Host.StartsWith("172.") ||
-                       uri.Host.StartsWith("192.168.");
+                var host = uri.Host.ToLowerInvariant();
+
+                return allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase) ||
+                       host == "localhost" ||
+                       host == "127.0.0.1" ||
+                       host.EndsWith(".vercel.app") ||
+                       host.StartsWith("10.") ||
+                       host.StartsWith("172.") ||
+                       host.StartsWith("192.168.");
             })
             .AllowAnyHeader()
             .AllowAnyMethod()

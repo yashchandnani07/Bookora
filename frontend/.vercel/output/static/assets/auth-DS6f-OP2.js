@@ -1,0 +1,1 @@
+import{a as t}from"./client-C-FOQDEm.js";function o(r){return t("/Auth/register",{method:"POST",body:JSON.stringify(r)})}function n(r){return t("/Auth/login",{method:"POST",body:JSON.stringify(r)})}export{n as l,o as r};
